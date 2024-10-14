@@ -1,81 +1,57 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CountryNowService } from '../axios/country-now/country-now.service';
+import { NagerService } from '../axios/nager/nager.service';
+import { CACHE_KEYS } from '../constants/cache.constants';
 
 @Injectable()
 export class CountriesService {
-  private readonly nagerApiUrl: string;
-  private readonly populationApiUrl: string;
-  private readonly flagApiUrl: string;
+  #logger = new Logger(CountriesService.name);
 
-  constructor(private readonly configService: ConfigService) {
-    this.nagerApiUrl = this.configService.get<string>('NAGER_API_URL');
-    this.populationApiUrl = this.configService.get<string>(
-      'COUNTRIES_POPULATION_API_URL',
-    );
-    this.flagApiUrl = this.configService.get<string>('COUNTRIES_FLAG_API_URL');
-  }
+  constructor(
+    private readonly nagerService: NagerService,
+    private readonly countryNowService: CountryNowService,
+    @Inject(CACHE_MANAGER)
+    private readonly cache,
+  ) {}
 
   async getAvailableCountries() {
-    try {
-      const response = await axios.get(
-        `${this.nagerApiUrl}/AvailableCountries`,
-      );
-      return response.data;
-    } catch {
-      throw new HttpException(
-        'Failed to fetch available countries.',
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
+    const isCached = await this.cache.get(CACHE_KEYS.COUNTRIES);
+
+    if (isCached?.length) {
+      return isCached;
     }
+
+    /**
+     * TODO: validar se vai precisar transformar os dados pra um novo DTO - indico que sim, nesse caso, talvez nao, mas nos outros talve...
+     */
+    const countries = await this.nagerService.getAvailableCountries();
+
+    await this.cache.set(CACHE_KEYS.COUNTRIES, countries);
+
+    return countries;
   }
 
-  async getCountryInfo(code: string) {
-    try {
-      const countryInfoResponse = await axios.get(
-        `${this.nagerApiUrl}/CountryInfo/${code}`,
-      );
-      const countryInfo = countryInfoResponse.data;
+  async getCountryInfoByCode(countryCode: string) {
+    const isCached = await this.cache.get(
+      `${CACHE_KEYS.COUNTRY_CODE}/${countryCode}`,
+    );
 
-      if (!countryInfo) {
-        throw new HttpException('Country not found', HttpStatus.NOT_FOUND);
-      }
-
-      const populationResponse = await axios.post(this.populationApiUrl, {
-        country: countryInfo.commonName,
-      });
-
-      const populationData = populationResponse.data.data;
-      if (!populationData) {
-        throw new HttpException(
-          'Failed to fetch population data',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      const flagResponse = await axios.post(this.flagApiUrl, {
-        country: countryInfo.commonName,
-      });
-
-      const flagData = flagResponse.data.data;
-      if (!flagData?.flag) {
-        throw new HttpException(
-          'Failed to fetch flag URL',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      return {
-        name: countryInfo.commonName,
-        borders: countryInfo.borders,
-        population: populationData,
-        flagUrl: flagData.flag,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.response?.data?.message || 'Failed to fetch country info.',
-        error.response?.status || HttpStatus.SERVICE_UNAVAILABLE,
-      );
+    if (isCached) {
+      return isCached;
     }
+
+    /**
+     * TODO: validar se vai precisar transformar os dados pra um novo DTO
+     */
+    const countryInfo =
+      await this.nagerService.getCountryInfoByCode(countryCode);
+
+    await this.cache.set(
+      `${CACHE_KEYS.COUNTRY_CODE}/${countryCode}`,
+      countryInfo,
+    );
+
+    return countryInfo;
   }
 }

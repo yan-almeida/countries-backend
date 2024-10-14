@@ -1,11 +1,10 @@
-import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { AxiosModule } from '../axios/axios.module';
 import { CountriesController } from './countries.controller';
 import { CountriesService } from './countries.service';
 
 @Module({
-  imports: [HttpModule, ConfigModule],
+  imports: [AxiosModule],
   controllers: [CountriesController],
   providers: [CountriesService],
 })
